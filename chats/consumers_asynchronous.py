@@ -1,10 +1,23 @@
 import json
+from sqlite3 import Binary
 
 from channels.generic.websocket import AsyncWebsocketConsumer
 from .models import ChatMessage
-from django.contrib.auth.models import User
+# from django.contrib.auth.models import User
 from channels.db import database_sync_to_async
 from asgiref.sync import sync_to_async
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.core.files.base import ContentFile, File
+from django.db.models.fields.files import ImageFieldFile
+from django.utils.crypto import get_random_string
+from django.utils.timezone import now
+from django.utils.text import slugify
+
+
+import base64
+import os
+User = get_user_model()
 
 class UserToUserChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -28,17 +41,22 @@ class UserToUserChatConsumer(AsyncWebsocketConsumer):
 
 
     @database_sync_to_async
-    def create_message(self, message):
-        return ChatMessage.objects.create(
-            sender=self.sender,
-            receiver=self.receiverUser,
-            message=message
-        )
+    def create_message(self, message, file, imageName):
+        message = ChatMessage.objects.create(
+                    sender=self.sender,
+                    receiver=self.receiverUser,
+                    message=message,
+                )
+        message.image.save(imageName, file)
+
+
+        message.save()
+        return message
 
     @database_sync_to_async
     def get_messages(self):
         messages = ChatMessage.objects.filter(sender=self.sender, receiver=self.receiverUser) | ChatMessage.objects.filter(sender=self.receiverUser, receiver=self.sender).order_by('timestamp')
-        return [{"sender": msg.sender.username, "content": msg.message, "timestamp": msg.timestamp.strftime("%H:%M")} for msg in messages]
+        return [{"messageURL": msg.image.url if msg.image else None , "sender": msg.sender.username, "content": msg.message, "timestamp": msg.timestamp.strftime("%H:%M")} for msg in messages]
     
     def get_room_name(self):
         ids = sorted([str(self.sender.id), str(self.receiveID)])
@@ -55,13 +73,25 @@ class UserToUserChatConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data):
         body = json.loads(text_data)
-        content = body["message"]
-        message = await self.create_message(content)
+        text: str = body["message"]
+        fileImgContent = body['fileImgContent']
+        imgName = f'{body['fileImgContent']['name']}_time'
+        imgContent = body['fileImgContent']['content']
+        if "," in imgContent:
+            imgContent = imgContent.split(",")[1]
+        
+        imgBinaryContent = base64.b64decode(imgContent)
+        imageName: str = f'{imgName}{now}{get_random_string(22)}.png'
+        file = ContentFile(imgBinaryContent)
+
+        message = await self.create_message(text, file, imageName)
+
 
         await self.channel_layer.group_send(self.messaging_group,  
                                             {
                 "type": "chat.message",
                 "message": message.message,
+                "messageURL": message.image.url,
                 "sender": self.sender.username,
                 "timestamp": message.timestamp.strftime("%H:%M")
             }
@@ -69,8 +99,8 @@ class UserToUserChatConsumer(AsyncWebsocketConsumer):
 
     
     async def chat_message(self, event):
-        message = {"sender": event['sender'], "message": event['message'], "timestamp": event['timestamp']}
-        await self.send(text_data=json.dumps({"sender": event['sender'], "message": event['message'], "timestamp": event['timestamp']}))
+        # message = {"sender": event['sender'], "message": event['message'], "timestamp": event['timestamp'], "messageURL": event['messageURL']]}
+        await self.send(text_data=json.dumps({"sender": event['sender'], "message": event['message'], "timestamp": event['timestamp'], "messageURL": event['messageURL']}))
 
 
 
