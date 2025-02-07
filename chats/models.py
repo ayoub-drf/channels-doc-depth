@@ -23,8 +23,9 @@ class Product(models.Model):
 class ChatMessage(models.Model):
     sender = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='sent_messages')
     receiver = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name='received_messages')
-    image = models.ImageField(upload_to="chat-messages/", null=True)
-    message = models.TextField()
+    image = models.ImageField(upload_to="chat-messages/", null=True, blank=True)
+    audio = models.FileField(upload_to='voice_messages/', null=True, blank=True)
+    message = models.TextField(null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
     is_read = models.BooleanField(default=False)
 

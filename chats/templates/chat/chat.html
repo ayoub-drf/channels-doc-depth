@@ -13,7 +13,7 @@
     }
 
     .chat-container {
-      width: 50%;
+      width: 70%;
       margin: 20px auto;
       background: white;
       padding: 20px;
@@ -117,6 +117,10 @@
     input#file_label {
       display: none;
     }
+    .timer {
+      display: block;
+      margin: 0 10px;
+    }
   </style>
   <body>
     <div class="chat-container">
@@ -133,194 +137,251 @@
           class="message-input"
           placeholder="Type a message..."
           name=""
-          required
           id=""
         />
         <div class="field">
           <img src={% static "images/icons8-image-48.png" %} alt=""> <input
-          type="file" id="file_label" name="file" accept="image/*"
+          type="file" id="file_label" name="image_file" accept="image/*"
         </div>
-        <button id="record">Record</button>
-        <button id="stop" disabled>Stop</button>
-        <audio id="audioPlayback" controls></audio>
+        <div style="display: flex" class="field">
+          <button id="record">Record</button>
+          <button id="stop" disabled>Stop</button>
+          {% comment %} <audio id="audioPlayback" controls></audio> {% endcomment %}
+        </div>
+        <p
+        class="timer"
+        > <span id="timer">0</span> s</p>
         <button type="submit" class="send-btn">Send</button>
       </form>
     </div>
     <script>
-        const chatSocket = new WebSocket(
-            'ws://'
-            + window.location.host
-            + '/ws/messaging/'
-            + "{{receiver.id}}"
-            + '/'
-        );
-        let mediaRecorder;
-        let audioChunks = []
+      const chatSocket = new WebSocket(
+        "ws://" +
+          window.location.host +
+          "/ws/messaging/" +
+          "{{receiver.id}}" +
+          "/"
+      );
 
-        {% comment %} const audioStream = navigator.mediaDevices.getUserMedia({ audio: true }) {% endcomment %}
-      .then(stream => {
-        mediaRecorder = new MediaRecorder(stream);
+      chatSocket.onmessage = function (e) {
+        const data = JSON.parse(e.data);
+        const messageBox = document.querySelector(".chat-box");
+        if (data["type"] == "chat.history") {
+          console.log('data', data)
+          data.messages.forEach((elem) => {
+            const messageDiv = document.createElement("div");
+            messageDiv.classList.add("message");
+            const messageDivContent = document.createElement("div");
+            messageDivContent.classList.add(".message-content");
 
-        // Event fired when data is available
-        mediaRecorder.addEventListener("dataavailable", event => {
-          if (event.data.size > 0) {
-            audioChunks.push(event.data);
+            const senderP = document.createElement("p");
+            senderP.classList.add("username");
+            senderP.innerHTML = `<p class="username">${elem["sender"]}</p>`;
+            messageDivContent.append(senderP);
+
+            if (elem["audio"]) {
+              const audioElement = document.createElement("audio");
+              audioElement.controls = true;
+              audioElement.src = elem["audio"];
+
+              messageDivContent.append(audioElement);
+            }
+
+            if (elem["content"]) {
+              const textP = document.createElement("p");
+              textP.classList.add("text");
+              textP.innerHTML = `<p class="username">${elem["content"]}</p>`;
+              messageDivContent.append(textP);
+            }
+
+            if (elem["messageURL"]) {
+              const messageURL = document.createElement("img");
+              messageURL.src = elem["messageURL"];
+              messageURL.width = 300;
+              messageDivContent.append(messageURL);
+            }
+
+            if (elem["sender"] == "{{request.user}}") {
+              messageDiv.classList.add("sent");
+            } else {
+              messageDiv.classList.add("received");
+            }
+
+            messageDiv.append(messageDivContent);
+            messageBox.append(messageDiv);
+          });
+        } else {
+
+          const messageDiv = document.createElement("div");
+          messageDiv.classList.add("message");
+          const messageDivContent = document.createElement("div");
+          messageDivContent.classList.add(".message-content");
+
+
+          const senderP = document.createElement("p");
+          senderP.classList.add("username");
+          senderP.innerHTML = `${data["sender"]}`;
+          messageDivContent.append(senderP);
+
+
+          if (data["audio"]) {
+            const audioElement = document.createElement("audio");
+            audioElement.controls = true;
+            audioElement.src = data["audio"];
+
+            messageDivContent.append(audioElement);
           }
-        });
+          if (data["message"]) {
+            const textP = document.createElement("p");
+            textP.classList.add("text");
+            textP.innerHTML = `${data["message"]}`;
+            messageDivContent.append(textP);
+          }
 
-        // When recording stops, create an audio blob and display/play it
-        mediaRecorder.addEventListener("stop", () => {
-          const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
-          const audioUrl = URL.createObjectURL(audioBlob);
-          document.getElementById("audioPlayback").src = audioUrl;
-          audioChunks = [];
+          if (data["messageURL"]) {
+            const messageURL = document.createElement("img");
+            messageURL.src = data["messageURL"];
+            messageURL.width = 300;
+            messageDivContent.append(messageURL);
+          }
 
-          // Optionally, send the audio blob to your server
-          sendAudioToServer(audioBlob);
-        });
 
-        document.getElementById("record").addEventListener("click", () => {
-          mediaRecorder.start();
-          document.getElementById("record").disabled = true;
-          document.getElementById("stop").disabled = false;
-        });
+          if (data["sender"] == "{{request.user}}") {
+            messageDiv.classList.add("sent");
+          } else {
+            messageDiv.classList.add("received");
+          }
 
-        document.getElementById("stop").addEventListener("click", () => {
-          mediaRecorder.stop();
-          document.getElementById("record").disabled = false;
-          document.getElementById("stop").disabled = true;
+          messageDiv.append(messageDivContent);
+          messageBox.append(messageDiv);
+        }
+      };
+
+      let mediaRecorder;
+      let audioBlob;
+      let audioChunks = [];
+      let startTime, timerInterval;
+
+      function updateTimer() {
+        const elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+        document.getElementById('timer').textContent = elapsedTime;
+    }
+
+      navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then((stream) => {
+          mediaRecorder = new MediaRecorder(stream);
+
+          mediaRecorder.addEventListener("dataavailable", (event) => {
+            if (event.data.size > 0) {
+              audioChunks.push(event.data);
+            }
+          });
+
+          mediaRecorder.addEventListener("stop", () => {
+            audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+            const audioUrl = URL.createObjectURL(audioBlob);
+
+            {% comment %} document.querySelector("#audioPlayback").src = audioUrl; {% endcomment %}
+            document.querySelector(".send-btn").click();
+            audioChunks = [];
+          });
+
+          document.getElementById("record").addEventListener("click", () => {
+            mediaRecorder.start();
+            startTime = Date.now();
+            timerInterval = setInterval(updateTimer, 1000);
+            document.getElementById("record").disabled = true;
+            document.getElementById("stop").disabled = false;
+          });
+
+          document.getElementById("stop").addEventListener("click", () => {
+            mediaRecorder.stop();
+            clearInterval(timerInterval);
+            document.getElementById("record").disabled = false;
+            document.getElementById("stop").disabled = true;
+          });
+        })
+        .catch((error) => {
+          console.error("Error accessing microphone:", error);
         });
-      })
-      .catch(error => {
-        console.error("Error accessing microphone:", error);
+      document.querySelector(".chat-form").addEventListener("submit", (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const formData = new FormData(form);
+        const messageInputDom = document.querySelector(".message-input");
+        const message = messageInputDom.value;
+
+        if (audioBlob) {
+          formData.append("audio_file", audioBlob, "voice_message.webm");
+        }
+
+        const filesData = [...formData];
+        let imageFile;
+        let audioFile;
+        for (let index = 0; index < filesData.length; index++) {
+          const fileData = filesData[index][0];
+          if (filesData[index][0].toLowerCase() === "image_file") {
+            imageFile = filesData[index][1];
+          }
+
+          if (filesData[index][0].toLowerCase() === "audio_file") {
+            audioFile = filesData[index][1];
+          }
+        }
+
+        const formDataFileList = [imageFile.size, audioFile, message];
+
+        const isValidForm = formDataFileList.some((e) => e);
+
+        if (!isValidForm) {
+          console.log("form can not be an empty");
+        } else {
+          if (audioFile) {
+            const reader = new FileReader();
+            reader.readAsDataURL(audioFile);
+            reader.onload = () => {
+              const fileAudioContent = {
+                name: audioFile.name,
+                content: reader.result,
+              };
+              chatSocket.send(
+                JSON.stringify({
+                  fileAudioContent: fileAudioContent,
+                })
+              );
+            };
+          } else if (imageFile.size) {
+            const reader = new FileReader();
+
+            reader.readAsDataURL(imageFile);
+            reader.onload = () => {
+              const fileImgContent = {
+                name: imageFile.name,
+                content: reader.result,
+              };
+              chatSocket.send(
+                JSON.stringify({
+                  fileImgContent: fileImgContent,
+                })
+              );
+            };
+          } else {
+            chatSocket.send(
+              JSON.stringify({
+                text: message,
+              })
+            );
+          }
+        }
+
+        document.querySelector(".chat-form").reset()
       });
 
-      function sendAudioToServer(audioBlob) {
-        // Convert Blob to FormData for a POST request
-        const formData = new FormData();
-        formData.append("audio_file", audioBlob, "voice_message.webm");
-        console.log(audioBlob)
-        console.log(formData)
+      document.querySelector(".field img").onclick = () =>
+      document.querySelector("input#file_label").click();
 
-        {% comment %} // You can use fetch() to send the file over HTTP:
-        fetch("/upload-audio/", {
-          method: "POST",
-          body: formData,
-        })
-        .then(response => response.json())
-        .then(data => {
-          console.log("Audio message uploaded", data);
-          // Optionally notify via WebSocket that a new voice message is available.
-        })
-        .catch(err => console.error("Error uploading audio", err)); {% endcomment %}
-      }
-
-        chatSocket.onmessage = function(e) {
-            const data = JSON.parse(e.data)
-            const messageBox = document.querySelector('.chat-box');
-            if (data['type'] == "chat.history") {
-                data.messages.forEach((elem) => {
-                    const messageDiv = document.createElement('div');
-                    messageDiv.classList.add("message")
-                    const messageDivContent = document.createElement('div');
-                    messageDivContent.classList.add('.message-content')
-
-
-                    if(elem['sender'] == "{{request.user}}" ) {
-                        messageDiv.classList.add("sent")
-                    } else {
-                        messageDiv.classList.add("received")
-                    }
-                    console.log(elem['messageURL'])
-                    messageDivContent.innerHTML = `
-                        <p class="username">${elem['sender']}</p>
-                        <p class="text">${elem['content']}</p>
-                        <p class="timestamp">${elem['timestamp']}</p>
-                        <p class="messageURL">
-                        <img width="300" src="${elem['messageURL']}" alt="">
-                        </p>
-                    `;
-                    messageDiv.append(messageDivContent)
-                    messageBox.append(messageDiv)
-                })
-
-
-            } else {
-                const messageDiv = document.createElement('div');
-                messageDiv.classList.add("message")
-                const messageDivContent = document.createElement('div');
-                messageDivContent.classList.add('.message-content')
-
-
-                if(data['sender'] == "{{request.user}}" ) {
-                    messageDiv.classList.add("sent")
-                } else {
-                    messageDiv.classList.add("received")
-                }
-                messageDivContent.innerHTML = `
-                    <p class="username">${data['sender']}</p>
-                    <p class="text">${data['message']}</p>
-                    <p class="timestamp">${data['timestamp']}</p>
-                    <p class="messageURL">
-                        <img width="300" src="${data['messageURL']}" alt="">
-                    </p>
-                `;
-                messageDiv.append(messageDivContent)
-                messageBox.append(messageDiv)
-            }
-          }
-
-        document.querySelector('.chat-form').addEventListener("submit", (e) => {
-            e.preventDefault()
-            const form = e.target;
-            const formData = new FormData(form);
-            const file = e.target.file.files;
-            const messageInputDom = document.querySelector('.message-input');
-            const message = messageInputDom.value;
-
-            if(e.target.file.files.length < 1) {
-                chatSocket.send(JSON.stringify({
-                    'message': message,
-                }));
-            } else {
-
-                {% comment %} console.log(file[0].name) {% endcomment %}
-                const reader = new FileReader();
-                reader.readAsDataURL(file[0]);
-                reader.onload = () => {
-                  console.log(reader.result)
-                  const fileImgContent = {
-                      name: file[0].name,
-                      content: reader.result,
-                  }
-
-                  chatSocket.send(JSON.stringify({
-                      'message': message,
-                      'fileImgContent': fileImgContent
-                  }));
-                }
-
-                {% comment %} const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => {
-                    const fileImgContent = {
-                        filename: file.name,
-                        content: reader.result,
-                    }
-
-                    chatSocket.send(JSON.stringify({
-                        'message': message,
-                        'fileImgContent': fileImgContent
-                    }));
-                } {% endcomment %}
-            }
-
-        });
-
-        document.querySelector('.field img').onclick = () => document.querySelector('input#file_label').click();
-
-
-        document.querySelector('.message-input').focus();
+      document.querySelector(".message-input").focus();
     </script>
   </body>
 </html>

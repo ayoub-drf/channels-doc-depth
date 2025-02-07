@@ -41,22 +41,27 @@ class UserToUserChatConsumer(AsyncWebsocketConsumer):
 
 
     @database_sync_to_async
-    def create_message(self, message, file, imageName):
-        message = ChatMessage.objects.create(
-                    sender=self.sender,
-                    receiver=self.receiverUser,
-                    message=message,
-                )
-        message.image.save(imageName, file)
+    def create_message(self, text, fileImgContent, fileAudioContent):
+        print("create_message")
+        chat_message = ChatMessage(sender=self.sender, receiver=self.receiverUser)
+        
+        if text:
+            chat_message.message = text
+
+        if fileAudioContent:
+            chat_message.audio.save(fileAudioContent.name, fileAudioContent)
+
+        if fileImgContent:
+            chat_message.image.save(fileImgContent.name, fileImgContent)
 
 
-        message.save()
-        return message
+        chat_message.save()
+        return chat_message
 
     @database_sync_to_async
     def get_messages(self):
         messages = ChatMessage.objects.filter(sender=self.sender, receiver=self.receiverUser) | ChatMessage.objects.filter(sender=self.receiverUser, receiver=self.sender).order_by('timestamp')
-        return [{"messageURL": msg.image.url if msg.image else None , "sender": msg.sender.username, "content": msg.message, "timestamp": msg.timestamp.strftime("%H:%M")} for msg in messages]
+        return [{"messageURL": msg.image.url if msg.image else None, "audio": msg.audio.url if msg.audio else None, "sender": msg.sender.username, "content": msg.message, "timestamp": msg.timestamp.strftime("%H:%M")} for msg in messages]
     
     def get_room_name(self):
         ids = sorted([str(self.sender.id), str(self.receiveID)])
@@ -73,34 +78,49 @@ class UserToUserChatConsumer(AsyncWebsocketConsumer):
 
     async def receive(self, text_data):
         body = json.loads(text_data)
-        text: str = body["message"]
-        fileImgContent = body['fileImgContent']
-        imgName = f'{body['fileImgContent']['name']}_time'
-        imgContent = body['fileImgContent']['content']
-        if "," in imgContent:
-            imgContent = imgContent.split(",")[1]
-        
-        imgBinaryContent = base64.b64decode(imgContent)
-        imageName: str = f'{imgName}{now}{get_random_string(22)}.png'
-        file = ContentFile(imgBinaryContent)
 
-        message = await self.create_message(text, file, imageName)
+        text = body.get('text')
+        fileImgContent = body.get('fileImgContent')
+        fileAudioContent = body.get('fileAudioContent')
+        
+        if fileAudioContent:
+            fileName = f'{body['fileAudioContent']['name']}_time'
+            fileContent = body['fileAudioContent']['content']
+            if "," in fileContent:
+                fileContent = fileContent.split(",")[1]
+            fileBinaryContent = base64.b64decode(fileContent)
+            fileAudioName: str = f'{fileName}{now}{get_random_string(22)}.webm'
+            file = ContentFile(fileBinaryContent, fileAudioName)
+            fileAudioContent = file
+
+        if fileImgContent:
+            imgName = f'{body['fileImgContent']['name']}_time'
+            imgContent = body['fileImgContent']['content']
+            if "," in imgContent:
+                imgContent = imgContent.split(",")[1]
+            imgBinaryContent = base64.b64decode(imgContent)
+            fileImgName: str = f'{imgName}{now}{get_random_string(22)}.png'
+            file = ContentFile(imgBinaryContent, fileImgName)
+            fileImgContent = file
+
+        chat_message = await self.create_message(text, fileImgContent, fileAudioContent)
+
 
 
         await self.channel_layer.group_send(self.messaging_group,  
                                             {
                 "type": "chat.message",
-                "message": message.message,
-                "messageURL": message.image.url,
+                "text": chat_message.message if chat_message.message else None,
+                "messageURL": chat_message.image.url if chat_message.image else None,
+                "audio": chat_message.audio.url if chat_message.audio else None,
                 "sender": self.sender.username,
-                "timestamp": message.timestamp.strftime("%H:%M")
+                "timestamp": chat_message.timestamp.strftime("%H:%M")
             }
         )
 
     
     async def chat_message(self, event):
-        # message = {"sender": event['sender'], "message": event['message'], "timestamp": event['timestamp'], "messageURL": event['messageURL']]}
-        await self.send(text_data=json.dumps({"sender": event['sender'], "message": event['message'], "timestamp": event['timestamp'], "messageURL": event['messageURL']}))
+        await self.send(text_data=json.dumps({"sender": event['sender'], "message": event['text'], "audio": event['audio'], "timestamp": event['timestamp'], "messageURL": event['messageURL']}))
 
 
 
