@@ -21,13 +21,12 @@ def user_to_user_chat(request, pk):
     return render(request, "chat/chat.html", {'receiver': receiver, 'messages': messages})
 
 def home(request):
-    print('home')
     users = User.objects.exclude(username=request.user.username)
 
     return render(request, 'chat/index.html', {'users': users})
 
-def room(request, room_name):
-    print('room')
+def room(request, receiverID):
+    user = User.objects.get(pk=receiverID)
 
-    return render(request, "chat/room.html", {"room_name": room_name})
+    return render(request, "chat/room.html", {"receiverID": receiverID, "user": user})
 

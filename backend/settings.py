@@ -42,6 +42,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     'chats',
+    'video',
+    'analytics',
 ]
 AUTH_USER_MODEL = 'chats.CustomUser'
 

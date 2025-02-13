@@ -18,7 +18,8 @@
     }
 </style>
 <body >
-    <h1>You : {{request.user}} </h1>
+    <h1>You : {{request.user}} == only websocket</h1>
+
     {% for user in users %}
         <h1>
             <a href="{% url "user_to_user_chat" user.pk %}">
@@ -31,6 +32,18 @@
     What chat room would you like to enter?<br>
     <input id="room-name-input" type="text" size="100"><br>
     <input id="room-name-submit" type="button" value="Enter">
+
+    <h2>
+        <h1>You : {{request.user}} == webrtc</h1>
+        {% for user in users %}
+            <h1>
+                <a href="{% url "room" user.pk %}">
+                    Chat with this user {{user.username}}
+                </a>
+            </h1>
+        {% endfor %}
+        <br>
+    </h2>
 
     <script>
         document.querySelector('#room-name-input').focus();

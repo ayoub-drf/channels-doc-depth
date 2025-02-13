@@ -1,24 +1,20 @@
-<!DOCTYPE html>
 {% load static %}
-<html>
-  <head>
-    <meta charset="UTF-8">
-    <title>Hello World!</title>
-    <!-- https://electronjs.org/docs/tutorial/security#csp-meta-tag -->
-    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline';" />
-  </head>
-  <body>
-    <h1>Hello World!</h1>
-    We are using node <script>document.write(process.versions.node)</script>,
-    Chrome <script>document.write(process.versions.chrome)</script>,
-    and Electron <script>document.write(process.versions.electron)</script>.
-    <br/><br/>
-    <div>
-      <button id="button_rec">Record</button>
-      <p>recorder state: <span id="rec_status">inactive</span></p>
-    </div>
-  </body>
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+  <link rel="icon" href="/static/images/icons8-image-48.png">
+</head>
+<body>
+   <h1>WebRTC Signaling Demo</h1>
+  <!-- Video elements for local and remote streams -->
+  <video id="localVideo" autoplay playsinline muted></video>
+  <video id="remoteVideo" autoplay playsinline></video>
+  <br>
+  <button id="startCallButton">Start Call</button>
+  
   <script src="{% static "/js/record.js" %}"></script>
-
+</body>
 </html>
