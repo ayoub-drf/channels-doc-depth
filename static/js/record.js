@@ -1,6 +1,4 @@
 const roomName = JSON.parse(document.getElementById("receiverID").textContent);
-console.log("currentCallingUser", currentCallingUser);
-console.log("currentReceivingUser", currentReceivingUser);
 const servers = {
   iceServers: [
     {
@@ -72,11 +70,24 @@ const servers = {
 };
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
+const toggleMicButton = document.getElementById("toggleMicButton");
+const toggleVideoButton = document.getElementById("toggleVideoButton");
 const startCallButton = document.querySelector("button#startCallButton");
+const endCallButton = document.getElementById("endCallButton");
+
+const shareScreenButton = document.getElementById("shareScreenButton");
+const screenShareLocalVideo = document.getElementById("screenShareLocalVideo");
+const screenShareRemoteVideo = document.getElementById("screenShareRemoteVideo");
+
 let remoteStream;
 let localStream;
-const pc = new RTCPeerConnection(servers);
+let joinScreenButton;
 let answerButton;
+let screenShareRemoteStream;
+let screenShareLocalStream;
+let candidateQueue = [];
+
+let pc = new RTCPeerConnection(servers);
 
 const chatSocket = new WebSocket(
   "ws://" + window.location.host + "/ws/chat/" + roomName + "/"
@@ -89,29 +100,138 @@ chatSocket.addEventListener("open", async () => {
 chatSocket.addEventListener("message", async (e) => {
   const data = JSON.parse(e.data);
 
-  if (data.type == "offer") {
-    if (currentCallingUser !== data.currentCallingUser) {
+  if (data.type == "video-offer") {
+    if (data.currentCallingUser !== currentCallingUser) {
       answerButton = document.createElement("button");
       answerButton.innerText = "answer";
       document.body.append(answerButton);
       answerButton.onclick = async () => {
-        await createReceiverAnswer(data);
+        await createVideoAnswer(data);
       };
     }
-  } else if (data.type == "answer") {
-    if (data.currentReceivingUser === currentCallingUser) {
-      try {
-        await pc.setRemoteDescription(new RTCSessionDescription(data));
-        await flushCandidateQueue();
-      } catch (error) {
-        console.error("Error setting remote description:", error);
+  } 
+  else if (data.type == "video-answer") {
+    if (data.currentCallingUser !== currentCallingUser) {
+      await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+      await flushCandidateQueue();
+    }
+  } 
+  else if (data.type == "candidate") {
+    await handleCandidate(data);
+  } else if (data.type == "screen-offer") {
+    if (data.currentCallingUser !== currentCallingUser) {
+      joinScreenButton = document.createElement("button");
+        joinScreenButton.innerText = "Join the screen";
+        joinScreenButton.classList.add("joinScreenButton");
+        document.querySelector(".videos .screen-div").prepend(joinScreenButton);
+      joinScreenButton.onclick = async () => {
+        await createScreenAnswer(data);
+      };
+
+    }
+  } else if (data.type == "screen-answer") {
+    
+    if (data.currentCallingUser !== currentCallingUser) {
+      console.log("data.offer", data.offer)
+      await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+      await flushCandidateQueue();
+    }
+  } else if (data.type == "screen-share-ended") {
+    if (data.currentCallingUser !== currentCallingUser) {
+      if (document.querySelector(".videos .screen-div *").classList.contains("joinScreenButton")) {
+        document.querySelector(".videos .screen-div .joinScreenButton").remove();
+        screenShareRemoteStream = null;
+        screenShareRemoteVideo.srcObject = null;
       }
     }
-  } else if (data.type == "candidate") {
-    await handleCandidate(data)
   }
 });
 
+async function handleVideoMediaStreams() {
+  localStream = await navigator.mediaDevices.getUserMedia({
+    video: true,
+    audio: false,
+  });
+  remoteStream = new MediaStream();
+
+  localStream.getTracks().forEach((track) => {
+    pc.addTrack(track, localStream);
+  });
+
+  pc.ontrack = (event) => {
+    event.streams[0].getTracks().forEach((track) => {
+      remoteStream.addTrack(track);
+    });
+  };
+
+  localVideo.srcObject = localStream;
+  remoteVideo.srcObject = remoteStream;
+}
+
+async function createVideoOffer() {
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      chatSocket.send(
+        JSON.stringify({ type: "candidate", candidate: event.candidate })
+      );
+    }
+  };
+  const offerDescription = await pc.createOffer();
+  await pc.setLocalDescription(offerDescription);
+
+  const firstOffer = {
+    offer: offerDescription,
+    type: "video-offer",
+    currentCallingUser: currentCallingUser,
+  };
+
+  await sendMessage(firstOffer);
+}
+
+async function createVideoAnswer(data) {
+  toggleMicButton.disabled = false;
+  toggleVideoButton.disabled = false;
+  endCallButton.disabled = false;
+
+  await handleVideoMediaStreams();
+  await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+
+  const answerDescription = await pc.createAnswer();
+  await pc.setLocalDescription(answerDescription);
+
+  const firstAnswer = {
+    offer: answerDescription,
+    type: "video-answer",
+    currentCallingUser: currentCallingUser,
+  };
+
+  await sendMessage(firstAnswer);
+}
+
+startCallButton.addEventListener("click", async () => {
+  toggleMicButton.disabled = false;
+  toggleVideoButton.disabled = false;
+  endCallButton.disabled = false;
+
+  await handleVideoMediaStreams();
+
+  await createVideoOffer();
+});
+
+async function sendMessage(message) {
+  chatSocket.send(JSON.stringify(message));
+}
+
+async function flushCandidateQueue() {
+  for (const candidate of candidateQueue) {
+    try {
+      await pc.addIceCandidate(candidate);
+    } catch (error) {
+      console.error("Error adding queued candidate:", error);
+    }
+  }
+  candidateQueue = [];
+}
 
 async function handleCandidate(data) {
   if (data.candidate) {
@@ -119,194 +239,101 @@ async function handleCandidate(data) {
 
     if (pc.remoteDescription) {
       await pc.addIceCandidate(candidate);
-      console.log("ICE candidate added successfully:", candidate);
     } else {
       // If remote description is not set, queue the candidate.
-      console.log("Remote description not set; candidate will be queued:", candidate);
       queueCandidate(candidate);
     }
-    // console.log(data.candidate)
-    // console.log('data.candidate', candidate)
-
-    // await pc.addIceCandidate(candidate);
-
   }
 }
-
-let candidateQueue = [];
 
 function queueCandidate(candidate) {
   candidateQueue.push(candidate);
 }
 
-async function flushCandidateQueue() {
-  for (const candidate of candidateQueue) {
-    try {
-      await pc.addIceCandidate(candidate);
-      console.log("Queued ICE candidate added:", candidate);
-    } catch (error) {
-      console.error("Error adding queued candidate:", error);
-    }
+
+shareScreenButton.addEventListener("click", async () => {
+  if (!remoteStream && !localStream) {
+    console.log('Start a call first')
+    return;
   }
-  // Clear the queue after processing.
-  candidateQueue = [];
-}
 
-async function handleMediaStreams() {
-  localStream = await navigator.mediaDevices.getUserMedia({
-    video: true,
-    audio: true,
-  });
+  await handleScreenMediaStreams("screen-offer");
+  await createScreenOffer();
 
-  // initialize an empty media stream for the remote media stream (the receiver)
-  remoteStream = new MediaStream();
+});
 
-  // when the local media stream tracks add it to peer connection
-  localStream.getTracks().forEach((track) => {
-    pc.addTrack(track, localStream);
-  });
-
-  // when the peer connection tracked add event streams to remote stream (receiver)
-  pc.ontrack = (event) => {
-    event.streams[0].getTracks().forEach((track) => {
-      remoteStream.addTrack(track);
+async function handleScreenMediaStreams(type) {
+  if (type == "screen-offer") {
+    screenShareLocalStream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: false,
     });
-  };
+    
+    screenShareLocalStream.getTracks().forEach((track) => {
+      pc.addTrack(track, screenShareLocalStream);
+    });
+    screenShareLocalVideo.srcObject = screenShareLocalStream;
 
-  // add media streams to video html elements
-  localVideo.srcObject = localStream;
-  remoteVideo.srcObject = remoteStream;
-}
+    screenShareLocalStream.getTracks().forEach((track) => {
+      track.onended = async () => { 
+        track.stop();
+        screenShareLocalVideo.srcObject = null;
+        screenShareLocalStream = null;
+        await sendMessage({ type: "screen-share-ended", currentCallingUser: currentCallingUser });
+      }
+    });
+   
+    return;
+  } else if (type == "screen-answer") {
 
-startCallButton.onclick = async () => {
-  // get local media stream from the current user
-  await handleMediaStreams()
+    screenShareRemoteStream = new MediaStream();
+  
+    pc.ontrack = (event) => {
+      event.streams[0].getTracks().forEach((track) => {
+        screenShareRemoteStream.addTrack(track);
+      });
+    }
+  
+    screenShareRemoteVideo.srcObject = screenShareRemoteStream;
 
-  await createCurrentUserOffer();
+    return;
+  }
+
+
 };
 
-async function createCurrentUserOffer() {
-  pc.onicecandidate = event => {
-     if (event.candidate) {
-         chatSocket.send(JSON.stringify({type: "candidate", candidate: event.candidate}))
-     }
-   }
-
+async function createScreenOffer() {
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      chatSocket.send(
+        JSON.stringify({ type: "candidate", candidate: event.candidate })
+      );
+    }
+  };
   const offerDescription = await pc.createOffer();
   await pc.setLocalDescription(offerDescription);
 
-  const offer = {
-    sdp: offerDescription.sdp,
-    type: offerDescription.type,
+  const screenOffer = {
+    offer: offerDescription,
+    type: "screen-offer",
     currentCallingUser: currentCallingUser,
   };
+  await sendMessage(screenOffer);
+};
 
-  await sendMessage(offer);
-}
 
-async function createReceiverAnswer(offerDescription) {
-  await handleMediaStreams()
-  await pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
+async function createScreenAnswer(data) {
+  await handleScreenMediaStreams("screen-answer");
+  await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
 
   const answerDescription = await pc.createAnswer();
   await pc.setLocalDescription(answerDescription);
 
-  const answer = {
-    sdp: answerDescription.sdp,
-    type: answerDescription.type,
-    currentReceivingUser: currentReceivingUser,
+  const screenAnswer = {
+    offer: answerDescription,
+    type:  "screen-answer",
+    currentCallingUser: currentCallingUser,
   };
 
-  await sendMessage(answer);
-
-  pc.onicecandidate = event => {
-    if (event.candidate) {
-        chatSocket.send(JSON.stringify({type: "candidate", candidate: event.candidate}))
-    }
-  }
-}
-
-async function sendMessage(message) {
-  chatSocket.send(JSON.stringify(message));
-}
-
-// startCallButton.onclick = async () => {
-//   // pc.onicecandidate = event => {
-//   //   if (event.candidate) {
-//   //     sendMessage({
-//   //       type: "candidate",
-//   //       candidate: event.candidate
-//   //     });
-//   //   }
-//   // };
-
-//   const offerDescription = await pc.createOffer();
-//   await pc.setLocalDescription(offerDescription);
-
-//   const offer = {
-//     sdp: offerDescription.sdp,
-//     type: offerDescription.type,
-//   };
-
-//   await sendMessage(offer)
-
-// };
-
-// chatSocket.addEventListener("message", async (e) => {
-//   console.log(" ======== WebSocket messaged! =========");
-//   const data = JSON.parse(e.data);
-//   //console.log(data)
-
-//   switch (data.type) {
-//     case "offer":
-//       handleOffer(data);
-//       break;
-//     case "answer":
-//       handleAnswer(data);
-//       break;
-//     case "candidate":
-//       handleCandidate(data);
-//       break;
-//     default:
-//       console.log("Unknown message type:", data.type);
-//   }
-// });
-
-// chatSocket.addEventListener("close", async () => {
-//   console.log("WebSocket connection closed!");
-// });
-
-// async function sendMessage(message) {
-//   chatSocket.send(JSON.stringify(message));
-// }
-
-// async function handleOffer(data) {
-//   await pc.setRemoteDescription(new RTCSessionDescription(data));
-
-//   const answerDescription = await pc.createAnswer();
-//   await pc.setLocalDescription(answerDescription);
-
-//   const answer = {
-//     type: answerDescription.type,
-//     sdp: answerDescription.sdp,
-//   };
-
-//   await sendMessage(answer)
-
-// }
-
-// async function handleAnswer(data) {
-//   console.log("handleAnswer")
-//   await pc.setRemoteDescription(new RTCSessionDescription(data));
-// }
-
-// async function handleCandidate(data) {
-//   if (data.candidate) {
-//     try {
-//       await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-//       console.log("ICE candidate added successfully.");
-//     } catch (error) {
-//       console.error("Error adding received ICE candidate", error);
-//     }
-//   }
-// }
+  await sendMessage(screenAnswer);
+};

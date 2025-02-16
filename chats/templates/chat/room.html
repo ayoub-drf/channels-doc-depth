@@ -13,6 +13,13 @@
         width: 318px;
 
     }
+
+    video#screenShareVideo {
+        border: 1px solid #2196F3;
+        width: 100%;
+        width: 318px;
+
+    } 
     
     video#localVideo {
         border: 1px solid red;
@@ -21,25 +28,54 @@
 
     }
     .videos {
-        
         border: 1px solid;
-            display: flex
-        ;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px;
+        flex-wrap: wrap;
+        gap: 14px;
+}
+
+        .container {
+            display: flex;
             justify-content: space-between;
             align-items: center;
             padding: 10px;
-         }
+        }
+
+        video#screenShareLocalVideo {
+            border: 1px solid #2196F3;
+            width: 318px;
+            position: relative;
+        }
+        video#screenShareRemoteVideo {
+            border: 1px solid red;
+            width: 100%;
+            width: 318px;
+        }
     
 </style>
 <body>
-    <h1>WebRTC Signaling Demo  <span style="color: red;">{{request.user.username}}</span> </h1>
     <!-- Video elements for local and remote streams -->
      <div class="videos">
          <video id="localVideo" autoplay playsinline muted></video>
-         <video id="remoteVideo" autoplay playsinline></video>
+         <video id="remoteVideo" autoplay playsinline muted></video>
+         <div class="screen-div">
+             <video id="screenShareRemoteVideo" autoplay playsinline muted></video>
+         </div>
+        
+        <video id="screenShareLocalVideo" autoplay playsinline muted></video>
+    </div>
+        <div class="container">
+            <button id="startCallButton">Start Camera Call</button>
+            <button id="startAudioButton">Start Audio Call</button>
+            <button disabled id="toggleMicButton">Mute Mic</button>
+            <button disabled id="toggleVideoButton">Turn Off Video</button>
+            <button id="shareScreenButton">Share Screen</button>
+           <button id="stopScreenShareButton" disabled>Stop Screen Share</button>
+       <button disabled id="endCallButton">End Call</button>
      </div>
-    <br>
-    <button id="startCallButton">Start Call</button>
     
 
 
