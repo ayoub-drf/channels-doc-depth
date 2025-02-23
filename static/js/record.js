@@ -222,6 +222,11 @@ async function stopRemoteScreenSharing(screenShareRemoteVideo, screenShareRemote
 async function handleMediaStreams(mediaStreamType, user) {
   if (mediaStreamType === "screen") {
     if (currentCallingUser !== user) {
+      try {
+        
+      } catch (error) {
+        console.log('handleMediaStreams', error)
+      }
       screenShareLocalStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
         audio: true,
