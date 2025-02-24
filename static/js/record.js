@@ -1,4 +1,17 @@
 const roomName = JSON.parse(document.getElementById("receiverID").textContent);
+// const servers = {
+//     iceServers: [
+//       {
+//         urls: "stun:stun.l.google.com:19302"
+//       },
+//       {
+//         urls: "turn:openrelay.metered.ca:80",
+//         username: "openrelayproject",
+//         credential: "openrelayproject"
+//       }
+//     ],
+//     iceCandidatePoolSize: 10
+//   };
 const servers = {
   iceServers: [
     {
@@ -67,111 +80,225 @@ const servers = {
     },
   ],
   iceCandidatePoolSize: 10,
-};
-const localVideo = document.getElementById("localVideo");
-const remoteVideo = document.getElementById("remoteVideo");
+}; 
+  
+const startCallButton = document.querySelector(".container #startCallButton");
+// const startAudioButton = document.querySelector(".container #startAudioButton");
 const toggleMicButton = document.getElementById("toggleMicButton");
 const toggleVideoButton = document.getElementById("toggleVideoButton");
 const endCallButton = document.getElementById("endCallButton");
 const shareScreenButton = document.getElementById("shareScreenButton");
 
-const screenShareLocalVideo = document.getElementById("screenShareLocalVideo");
-const screenShareRemoteVideo = document.getElementById(
+let localVideoStream;
+let remoteVideoStream;
+let localScreenSharingStream;
+let remoteScreenSharingStream;
+let candidateQueue = [];
+const videoStreamConstraint = {
+  video: true,
+  audio: false,
+};
+const keywordConstraint = {
+  video: "video",
+  screen: "screen",
+  offer: "offer",
+  answer: "answer",
+  candidate: "candidate",
+  removeJoinButton: "removeJoinButton",
+};
+const localVideoStreamHtml = document.querySelector(".videos #localVideoHtml");
+const remoteVideoStreamHtml = document.querySelector(
+  ".videos #remoteVideoHtml"
+);
+const screenShareLocalVideoHtml = document.getElementById(
+  "screenShareLocalVideo"
+);
+const screenShareRemoteVideoHtml = document.getElementById(
   "screenShareRemoteVideo"
 );
-const stopLocalScreenSharingButton = document.querySelector('#stopScreenShareButton');
-
-
-const startCallButton = document.querySelector("button#startCallButton");
-let remoteStream;
-let localStream;
-let joinScreenButton;
-let answerButton;
-let screenShareRemoteStream;
-let screenShareLocalStream;
-let candidateQueue = [];
-
 let pc = new RTCPeerConnection(servers);
 
 const chatSocket = new WebSocket(
   "ws://" + window.location.host + "/ws/chat/" + roomName + "/"
 );
 
-chatSocket.addEventListener("open", async () => {
-  // console.log("WebSocket connection established!");
-});
-
-stopLocalScreenSharingButton.onclick = async () => {
-  console.log('stopLocalScreenSharingButton')
+startCallButton.onclick = async () => {
+  startCallButton.disabled = true;
+  toggleMicButton.disabled = false;
+  toggleVideoButton.disabled = false;
+  endCallButton.disabled = false;
+  try {
+    await handleLocalVideoStream();
+    await createLocalVideoStreamOffer();
+  } catch (error) {
+    console.log("handleLocalVideoStream", error);
+  }
 };
 
 chatSocket.addEventListener("message", async (e) => {
-  const data = JSON.parse(e.data);
+  const message = JSON.parse(e.data);
 
-  if (data.type == "offer") {
-    if (currentCallingUser !== data.currentCallingUser) {
-      if (data.mediaType === "screen") {
-        joinScreenButton = document.createElement("button");
-        joinScreenButton.innerText = "Join the screen";
-        joinScreenButton.classList.add("joinScreenButton");
-
-        document.querySelector(".videos .screen-div").prepend(joinScreenButton);
-        joinScreenButton.onclick = async () => {
-          await createReceiverAnswer(data, "screen");
-        };
-      } else {
+  if (message.mediaType === keywordConstraint.video) {
+    if (message.type === keywordConstraint.offer) {
+      if (message.currentCallingUser !== currentCallingUser) {
         answerButton = document.createElement("button");
         answerButton.innerText = "answer";
         document.body.append(answerButton);
         answerButton.onclick = async () => {
-          await createReceiverAnswer(data);
+          await createRemoteVideoAnswer(message);
         };
       }
-    }
-  } else if (data.type == "answer") {
-    if (data.currentReceivingUser == currentCallingUser) {
-      await pc.setRemoteDescription(new RTCSessionDescription(data));
-      await flushCandidateQueue();
-      // try {
-      //   await pc.setRemoteDescription(new RTCSessionDescription(data));
-      //   await flushCandidateQueue();
-      // } catch (error) {
-      //   console.error("Error setting remote description:", error);
-      // }
-    }
-  } else if (data.type == "candidate") {
-    await handleCandidate(data);
-  } else if (data.type == "endCall") {
-    endCall();
-  } else if (data.type === "removeJoinButton") {
-    if (data.currentCallingUser !== currentCallingUser) {
-      if (screenShareRemoteStream) {
-        // let tracks = screenShareRemoteStream.getTracks();
-        // for (let i = 0; i < tracks.length; i++) {
-        //   // tracks[i].stop();
-        //   console.log(tracks[i])
-          
-        // }
-        // screenShareRemoteVideo.srcObject = null;
+    } else if (message.type === keywordConstraint.answer) {
+      if (message.currentCallingUser !== currentCallingUser) {
+        const answer = {
+          type: message.type,
+          sdp: message.sdp,
+        };
 
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        await flushCandidateQueue();
       }
+    } else if (message.type === keywordConstraint.candidate) {
+      await handleCandidate(message);
+    }
+  } 
 
-      if (
-        document
-          .querySelector(".videos .screen-div .joinScreenButton")
-          .classList.contains("joinScreenButton")
-      ) {
-        document
-          .querySelector(".videos .screen-div .joinScreenButton")
-          .remove();
+
+  else if (message.mediaType === keywordConstraint.screen) {
+
+    if (message.type === keywordConstraint.offer) {
+      if (message.currentCallingUser !== currentCallingUser) {
+        joinScreenButton = document.createElement("button");
+        joinScreenButton.innerText = "Join the screen";
+        joinScreenButton.classList.add("joinScreenButton");
+        document.querySelector(".videos .screen-div").prepend(joinScreenButton);
+
+        joinScreenButton.onclick = async () => {
+          await createRemoteScreenSharingAnswer(message);
+        };
       }
+    } 
+
+    else if (message.type === keywordConstraint.answer) {
+      if (message.currentCallingUser !== currentCallingUser) {
+        const answer = {
+          type: message.type,
+          sdp: message.sdp,
+        };
+
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        //   await flushCandidateQueue();
+      }
+    } 
+
+    else if (message.type === keywordConstraint.candidate) {
+      console.log("candidate from the screen");
+      // await handleCandidate(message);
+    }
+  } 
+
+  else if (message.mediaType === keywordConstraint.removeJoinButton) {
+    if (message.currentCallingUser !== currentCallingUser) {
+      if (document.querySelector(".joinScreenButton")) {
+        document.querySelector(".joinScreenButton").remove();
+      }
+    }
+  }
+
+  else if (message.mediaType === "stopeRemoteScreenSharingStream") {
+    if (message.currentCallingUser !== currentCallingUser) {
+        if (remoteScreenSharingStream) {
+            remoteScreenSharingStream.getTracks().forEach(track => {
+                track.stop();
+            });
+        }
+
+        screenShareRemoteVideoHtml.srcObject = null;
+
     }
   }
 });
 
-async function handleCandidate(data) {
-  if (data.candidate) {
-    const candidate = new RTCIceCandidate(data.candidate);
+async function handleLocalVideoStream() {
+  localVideoStream = await navigator.mediaDevices.getUserMedia({
+    audio: true,
+    video: true,
+  });
+  remoteVideoStream = new MediaStream();
+
+  localVideoStream.getTracks().forEach((track) => {
+    pc.addTrack(track, localVideoStream);
+  });
+
+  localVideoStreamHtml.srcObject = localVideoStream;
+  remoteVideoStreamHtml.srcObject = remoteVideoStream;
+
+  pc.ontrack = (event) => {
+    event.streams[0].getTracks().forEach((track) => {
+      remoteVideoStream.addTrack(track);
+    });
+  };
+}
+
+async function createLocalVideoStreamOffer() {
+  const offerDescription = await pc.createOffer();
+  await pc.setLocalDescription(offerDescription);
+
+  const offer = {
+    sdp: offerDescription.sdp,
+    type: offerDescription.type,
+    currentCallingUser: currentCallingUser,
+    mediaType: "video",
+  };
+
+  sendMessage(offer);
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      sendMessage({
+        type: "candidate",
+        candidate: event.candidate,
+        mediaType: "video",
+      });
+    }
+  };
+}
+
+async function createRemoteVideoAnswer(message) {
+  await handleLocalVideoStream();
+  const offer = {
+    type: message.type,
+    sdp: message.sdp,
+  };
+
+  await pc.setRemoteDescription(new RTCSessionDescription(offer));
+
+  const answerDescription = await pc.createAnswer();
+  await pc.setLocalDescription(answerDescription);
+
+  const answer = {
+    sdp: answerDescription.sdp,
+    type: answerDescription.type,
+    currentCallingUser: currentCallingUser,
+    mediaType: "video",
+  };
+
+  sendMessage(answer);
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      sendMessage({
+        type: "candidate",
+        candidate: event.candidate,
+        mediaType: "video",
+      });
+    }
+  };
+}
+
+async function handleCandidate(message) {
+  if (message.candidate) {
+    const candidate = new RTCIceCandidate(message.candidate);
     queueCandidate(candidate);
 
     // if (pc.remoteDescription) {
@@ -194,149 +321,16 @@ async function flushCandidateQueue() {
       console.error("Error adding queued candidate:", error);
     }
   }
-  // Clear the queue after processing.
   candidateQueue = [];
 }
 
-async function stopLocalScreenSharing(
-  screenShareLocalVideo,
-  screenShareLocalStream,
-) {
-  const offer = {
-    type: "removeJoinButton",
-    currentCallingUser: currentCallingUser,
-  };
-
-  await sendMessage(offer);
-  let tracks = screenShareLocalStream.getTracks();
-  for (let i = 0; i < tracks.length; i++) {
-    tracks[i].stop();
-  }
-  screenShareLocalVideo.srcObject = null;
+function sendMessage(message) {
+  chatSocket.send(JSON.stringify(message));
 }
-
-async function stopRemoteScreenSharing(screenShareRemoteVideo, screenShareRemoteStream) {
-  console.log('stopRemoteScreenSharing')
-}
-
-async function handleMediaStreams(mediaStreamType, user) {
-  if (mediaStreamType === "screen") {
-    if (currentCallingUser !== user) {
-      screenShareLocalStream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
-      });
-      screenShareLocalStream.getTracks().forEach((track) => {
-        pc.addTrack(track, screenShareLocalStream);
-      });
-
-      screenShareLocalVideo.srcObject = screenShareLocalStream;
-
-      const screenShareLocalTrack = screenShareLocalStream.getVideoTracks()[0];
-      screenShareLocalTrack.onended = async () => {
-        await stopLocalScreenSharing(
-          screenShareLocalVideo,
-          screenShareLocalStream,
-        );
-      };
-    } else {
-      screenShareRemoteStream = new MediaStream();
-      screenShareRemoteVideo.srcObject = screenShareRemoteStream;
-
-      pc.ontrack = (event) => {
-        event.streams[0].getTracks().forEach((track) => {
-            screenShareRemoteStream.addTrack(track);
-            remoteStream.addTrack(track);
-        });
-      };
-
-      return
-      
-    }
-  } else {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: false,
-    });
-
-    // initialize an empty media stream for the remote media stream (the receiver)
-    remoteStream = new MediaStream();
-
-    // when the local media stream tracks add it to peer connection
-    localStream.getTracks().forEach((track) => {
-      pc.addTrack(track, localStream);
-    });
-
-    // add media streams to video html elements
-    localVideo.srcObject = localStream;
-    remoteVideo.srcObject = remoteStream;
-
-    // when the peer connection tracked add event streams to remote stream (receiver)
-    pc.ontrack = (event) => {
-      event.streams[0].getTracks().forEach((track) => {
-          remoteStream.addTrack(track);
-      });
-    };
-    return;
-  }
-
-
-}
-
-startCallButton.onclick = async () => {
-  toggleMicButton.disabled = false;
-  toggleVideoButton.disabled = false;
-  endCallButton.disabled = false;
-  // get local media stream from the current user
-  await handleMediaStreams();
-
-  await createCurrentUserOffer();
-};
-
-function endCall() {
-  console.log("end call");
-  if (pc) {
-    pc.close();
-    pc = null;
-  }
-  if (localStream) {
-    localStream.getTracks().forEach((track) => {
-      track.stop();
-    });
-  }
-
-  if (remoteStream) {
-    remoteStream.getTracks().forEach((track) => {
-      track.stop();
-    });
-  }
-
-  localVideo.srcObject = null;
-  remoteVideo.srcObject = null;
-
-  window.location.reload();
-};
-
-shareScreenButton.addEventListener("click", async () => {
-  try {
-    await handleMediaStreams("screen");
-    await createCurrentUserOffer("screen");
-    
-  } catch (error) {
-    console.log('shareScreenButton', error)
-  }
-
-});
-
-endCallButton.addEventListener("click", () => {
-  // endCall()
-  sendMessage({ type: "endCall", reload: true });
-  window.location.reload();
-});
 
 toggleMicButton.addEventListener("click", () => {
-  if (localStream) {
-    const audioTrack = localStream.getAudioTracks()[0];
+  if (localVideoStream) {
+    const audioTrack = localVideoStream.getAudioTracks()[0];
     if (audioTrack) {
       audioTrack.enabled = !audioTrack.enabled;
       toggleMicButton.innerText = audioTrack.enabled
@@ -347,8 +341,8 @@ toggleMicButton.addEventListener("click", () => {
 });
 
 toggleVideoButton.addEventListener("click", () => {
-  if (localStream) {
-    const videoTrack = localStream.getVideoTracks()[0];
+  if (localVideoStream) {
+    const videoTrack = localVideoStream.getVideoTracks()[0];
     if (videoTrack) {
       videoTrack.enabled = !videoTrack.enabled;
       toggleVideoButton.innerText = videoTrack.enabled
@@ -358,58 +352,114 @@ toggleVideoButton.addEventListener("click", () => {
   }
 });
 
-async function createCurrentUserOffer(mediaType) {
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      chatSocket.send(
-        JSON.stringify({ type: "candidate", candidate: event.candidate })
-      );
-    }
-  };
+shareScreenButton.onclick = async () => {
+  try {
+    await handleLocalScreenSharingStream();
+    await createLocalScreenSharingStreamOffer();
+  } catch (error) {
+    console.log("handleLocalScreenSharingStream", error);
+  }
+};
 
+async function handleLocalScreenSharingStream() {
+  localScreenSharingStream = await navigator.mediaDevices.getDisplayMedia(
+    videoStreamConstraint
+  );
+  remoteScreenSharingStream = new MediaStream();
+
+  localScreenSharingStream.getTracks().forEach((track) => {
+    pc.addTrack(track, localScreenSharingStream);
+    track.addEventListener("ended", () => {
+      stopeLocalScreenSharingStream();
+    });
+  });
+
+  screenShareLocalVideoHtml.srcObject = localScreenSharingStream;
+//   screenShareRemoteVideoHtml.srcObject = remoteScreenSharingStream;
+
+  pc.ontrack = (event) => {
+    event.streams[0].getTracks().forEach((track) => {
+      remoteScreenSharingStream.addTrack(track);
+    });
+  };
+}
+
+async function createLocalScreenSharingStreamOffer() {
   const offerDescription = await pc.createOffer();
   await pc.setLocalDescription(offerDescription);
 
   const offer = {
     sdp: offerDescription.sdp,
     type: offerDescription.type,
-    mediaType: mediaType,
     currentCallingUser: currentCallingUser,
+    mediaType: "screen",
   };
 
-  await sendMessage(offer);
+  sendMessage(offer);
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      sendMessage({
+        type: "candidate",
+        candidate: event.candidate,
+        mediaType: "screen",
+      });
+    }
+  };
 }
 
-async function createReceiverAnswer(offerDescription, MediaType) {
-  toggleMicButton.disabled = false;
-  toggleVideoButton.disabled = false;
-  endCallButton.disabled = false;
-  await handleMediaStreams(MediaType, currentCallingUser);
+function stopeLocalScreenSharingStream() {
+  if (localScreenSharingStream) {
+    localScreenSharingStream.getTracks().forEach((track) => {
+      track.stop();
+      pc.getSenders().forEach((sender) => {
+        if (sender.track === track) {
+          pc.removeTrack(sender);
+        }
+      });
+    });
+    screenShareLocalVideoHtml.srcObject = null;
 
-  await pc.setRemoteDescription(new RTCSessionDescription(offerDescription));
+    sendMessage({
+      mediaType: "removeJoinButton",
+      currentCallingUser: currentCallingUser,
+    });
+  }
+
+  if (remoteScreenSharingStream) {
+    sendMessage({
+        mediaType: "stopeRemoteScreenSharingStream",
+        currentCallingUser: currentCallingUser,
+      });
+  }
+}
+
+async function createRemoteScreenSharingAnswer(message) {
+  remoteScreenSharingStream = new MediaStream();
+
+  pc.ontrack = (event) => {
+    event.streams[0].getTracks().forEach((track) => {
+      remoteScreenSharingStream.addTrack(track);
+    });
+  };
+
+  screenShareRemoteVideoHtml.srcObject = remoteScreenSharingStream;
+  const offer = {
+    type: message.type,
+    sdp: message.sdp,
+  };
+
+  await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
   const answerDescription = await pc.createAnswer();
   await pc.setLocalDescription(answerDescription);
 
   const answer = {
-    sdp: answerDescription.sdp,
     type: answerDescription.type,
-    MediaType: MediaType,
-    currentReceivingUser: currentReceivingUser,
+    sdp: answerDescription.sdp,
+    currentCallingUser: currentCallingUser,
+    mediaType: "screen",
   };
 
-
-  await sendMessage(answer);
-
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      chatSocket.send(
-        JSON.stringify({ type: "candidate", candidate: event.candidate })
-      );
-    }
-  };
+  sendMessage(answer);
 }
-
-async function sendMessage(message) {
-  chatSocket.send(JSON.stringify(message));
-};
