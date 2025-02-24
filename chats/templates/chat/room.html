@@ -7,7 +7,7 @@
     <link rel="icon" href="/static/images/icons8-image-48.png">
 </head>
 <style>
-    video#remoteVideo {
+    video#remoteVideoHtml {
         border: 1px solid #2196F3;
         width: 100%;
         width: 318px;
@@ -21,7 +21,7 @@
 
     } 
     
-    video#localVideo {
+    video#localVideoHtml {
         border: 1px solid red;
         width: 100%;
         width: 318px;
@@ -59,8 +59,8 @@
 <body>
     <!-- Video elements for local and remote streams -->
      <div class="videos">
-         <video id="localVideo" autoplay playsinline muted></video>
-         <video id="remoteVideo" autoplay playsinline muted></video>
+         <video id="localVideoHtml" autoplay playsinline muted></video>
+         <video id="remoteVideoHtml" autoplay playsinline muted></video>
          <div class="screen-div">
              <video id="screenShareRemoteVideo" autoplay playsinline muted></video>
          </div>
@@ -69,12 +69,12 @@
     </div>
         <div class="container">
             <button id="startCallButton">Start Camera Call</button>
-            <button id="startAudioButton">Start Audio Call</button>
-            <button disabled id="toggleMicButton">Mute Mic</button>
-            <button disabled id="toggleVideoButton">Turn Off Video</button>
+            {% comment %} <button id="startAudioButton">Start Audio Call</button> {% endcomment %}
+            <button  id="toggleMicButton">Mute Mic</button>
+            <button  id="toggleVideoButton">Turn Off Video</button>
             <button id="shareScreenButton">Share Screen</button>
-           <button id="stopScreenShareButton" disabled>Stop Screen Share</button>
-       <button disabled id="endCallButton">End Call</button>
+           <button id="stopScreenShareButton">Stop Screen Share</button>
+       <button  id="endCallButton">End Call</button>
      </div>
     
 
@@ -87,7 +87,7 @@
         const currentReceivingUser = "{{user.username}}"
 
     </script>
-    <script src="{% static "/js/record.js" %}">
+    <script src="{% static "/js/recordV2.js" %}">
     </script>
 
 </body>

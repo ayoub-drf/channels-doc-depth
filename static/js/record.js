@@ -79,6 +79,8 @@ const screenShareLocalVideo = document.getElementById("screenShareLocalVideo");
 const screenShareRemoteVideo = document.getElementById(
   "screenShareRemoteVideo"
 );
+const stopLocalScreenSharingButton = document.querySelector('#stopScreenShareButton');
+
 
 const startCallButton = document.querySelector("button#startCallButton");
 let remoteStream;
@@ -96,8 +98,12 @@ const chatSocket = new WebSocket(
 );
 
 chatSocket.addEventListener("open", async () => {
-  console.log("WebSocket connection established!");
+  // console.log("WebSocket connection established!");
 });
+
+stopLocalScreenSharingButton.onclick = async () => {
+  console.log('stopLocalScreenSharingButton')
+};
 
 chatSocket.addEventListener("message", async (e) => {
   const data = JSON.parse(e.data);
@@ -111,7 +117,6 @@ chatSocket.addEventListener("message", async (e) => {
 
         document.querySelector(".videos .screen-div").prepend(joinScreenButton);
         joinScreenButton.onclick = async () => {
-          console.log('joinScreenButton.onclick')
           await createReceiverAnswer(data, "screen");
         };
       } else {
@@ -124,12 +129,9 @@ chatSocket.addEventListener("message", async (e) => {
       }
     }
   } else if (data.type == "answer") {
-    console.log("hello", data, currentCallingUser)
     if (data.currentReceivingUser == currentCallingUser) {
-      console.log("me the answer", data);
       await pc.setRemoteDescription(new RTCSessionDescription(data));
       await flushCandidateQueue();
-      console.log('done', data.sdp)
       // try {
       //   await pc.setRemoteDescription(new RTCSessionDescription(data));
       //   await flushCandidateQueue();
@@ -139,13 +141,11 @@ chatSocket.addEventListener("message", async (e) => {
     }
   } else if (data.type == "candidate") {
     await handleCandidate(data);
-    console.log('candidate', data)
   } else if (data.type == "endCall") {
     endCall();
   } else if (data.type === "removeJoinButton") {
     if (data.currentCallingUser !== currentCallingUser) {
       if (screenShareRemoteStream) {
-        console.log('Stooped .........')
         // let tracks = screenShareRemoteStream.getTracks();
         // for (let i = 0; i < tracks.length; i++) {
         //   // tracks[i].stop();
@@ -222,11 +222,6 @@ async function stopRemoteScreenSharing(screenShareRemoteVideo, screenShareRemote
 async function handleMediaStreams(mediaStreamType, user) {
   if (mediaStreamType === "screen") {
     if (currentCallingUser !== user) {
-      try {
-        
-      } catch (error) {
-        console.log('handleMediaStreams', error)
-      }
       screenShareLocalStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
         audio: true,
@@ -320,11 +315,17 @@ function endCall() {
   remoteVideo.srcObject = null;
 
   window.location.reload();
-}
+};
+
 shareScreenButton.addEventListener("click", async () => {
-  // shareScreenButton.disabled = true;
-  await handleMediaStreams("screen");
-  await createCurrentUserOffer("screen");
+  try {
+    await handleMediaStreams("screen");
+    await createCurrentUserOffer("screen");
+    
+  } catch (error) {
+    console.log('shareScreenButton', error)
+  }
+
 });
 
 endCallButton.addEventListener("click", () => {
@@ -411,4 +412,4 @@ async function createReceiverAnswer(offerDescription, MediaType) {
 
 async function sendMessage(message) {
   chatSocket.send(JSON.stringify(message));
-}
+};
