@@ -2,7 +2,7 @@
 .env
 0001_initial.py
 db.sqlite3
-
+chats/migrations/
 
 media
 
